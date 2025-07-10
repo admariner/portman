@@ -201,10 +201,19 @@ export class TestSuite {
           this.variationWriter.add(pmOperation, oaOperation, variationTest)
         } else {
           const respInfo = parseOpenApiResponse(variationTest.openApiResponse)
-          if (respInfo && oaOperation?.responseCodes.includes(respInfo.code)) {
-            // Configured an openApiResponse, only generate variation for the targeted response object
-            this.variationWriter.add(pmOperation, oaOperation, variationTest)
-          } else {
+          if (respInfo && oaOperation) {
+            let matchCodes: string[] = []
+            if (respInfo.code.includes('*')) {
+              matchCodes = oaOperation.responseCodes.filter(code =>
+                matchWildcard(code, respInfo.code)
+              )
+            } else if (oaOperation.responseCodes.includes(respInfo.code)) {
+              matchCodes = [respInfo.code]
+            }
+            if (matchCodes.length > 0) {
+              // Configured an openApiResponse, generate variations for the matched response codes
+              this.variationWriter.add(pmOperation, oaOperation, variationTest)
+            }
             // Configured an openApiResponse, but it doesn't exist in OpenAPI, do nothing
           }
         }
@@ -296,15 +305,20 @@ export class TestSuite {
 
     // Target openApiResponse code
     if (openApiResponseCode && typeof openApiResponseCode === 'string') {
-      response = Object.entries(oaOperation.schema.responses).filter(
-        res => parseInt(res[0]) === parseInt(openApiResponseCode)
-      )
+      if (openApiResponseCode.toLowerCase() === 'default') {
+        response = Object.entries(oaOperation.schema.responses).filter(res => res[0] === 'default')
+      } else {
+        response = Object.entries(oaOperation.schema.responses).filter(
+          res => parseInt(res[0]) === parseInt(openApiResponseCode)
+        )
+      }
     }
 
     // No response object matching
     if (!response[0]?.[1]) return pmOperation
 
-    const responseCode = parseInt(response[0][0]) as number
+    const responseKey = response[0][0]
+    const responseCode = parseInt(responseKey) as number
     const responseObject = response[0][1] as OpenAPIV3.ResponseObject
 
     // List excludeForOperations
